@@ -161,7 +161,7 @@ function Use-WildcardPathFinding {
                 $subItemPaths = Use-WildcardEscaping -Literal $StartIn | Join-Path -Path { $_ } *
                 $subItemPathInfos = @(Resolve-Path -Path $subItemPaths)
             }
-            catch { throw }
+            catch { $resultPaths = $null; throw }
 
             $foundLiteralPaths = @($subItemPathInfos | ForEach-Object { $_.Path } |
                 Where-Object { (Split-Path $_ -Leaf) -match $pathHeadRegexPattern })
@@ -180,7 +180,7 @@ function Use-WildcardPathFinding {
         try {
             $foundLiteralPaths | ForEach-Object { Use-WildcardPathFinding -Path $pathTail -StartIn $_ }
         }
-        catch { throw }
+        catch { $resultPaths = $null; throw }
     }
 
     end { return $resultPaths }
