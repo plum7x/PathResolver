@@ -12,7 +12,7 @@ function Resolve-LiteralPathAsFullPath {
     
     process {
         try { $fullProviderPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path) }
-        catch { throw } if (-not $?) { return } # If error then go next item, no matter what ErrorAction is.
+        catch { throw } if (-not $?) { return } # If error then go next pipeline item, no matter what ErrorAction is.
 
         if ($fullProviderPath -notmatch $rootPathPattrn) {
             $toReplace = '^' + [regex]::Escape($PWD.Drive.Root).TrimEnd('\', '/') + '($|[\\/])'
