@@ -9,10 +9,14 @@ function Resolve-LiteralPathAsFullPath {
         $rootPathPattrn = if ($isWindows) { '^\S+\:\\' } else { '^/|(?:\S+\:/)' }
         [string[]] $resultPaths = @()
     }
-    
+
     process {
         try { $fullProviderPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path) }
-        catch { throw } if (-not $?) { return } # If error then go next pipeline item, no matter what ErrorAction is.
+        catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
 
         if ($fullProviderPath -notmatch $rootPathPattrn) {
             $toReplace = '^' + [regex]::Escape($PWD.Drive.Root).TrimEnd('\', '/') + '($|[\\/])'
@@ -39,7 +43,6 @@ function Use-WildcardEscaping {
     begin { [string[]] $resultPatterns = @() }
 
     process {
-        [string] $wildcardPattern = $null
         $wildcardPattern = $Literal -replace '[`\*\?\[\]]', '`$0'
         $resultPatterns += @($wildcardPattern)
     }
@@ -79,10 +82,18 @@ function Resolve-WildcardPathAsFullPath {
 
         $literalPathHead = $pathHead -replace '`(.)', '$1'
         try { $fullLiteralPathHead = Resolve-LiteralPathAsFullPath $literalPathHead }
-        catch { throw } if (-not $?) { return }
+        catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
         $fullPath = [IO.Path]::Combine($(Use-WildcardEscaping $fullLiteralPathHead), $pathTail)
         try { $fullPath = Resolve-LiteralPathAsFullPath $fullPath }
-        catch { throw } if (-not $?) { return }
+        catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
 
         $resultPaths += @($fullPath)
     }
@@ -111,13 +122,21 @@ function Resolve-FullPath {
         if ($PSCmdlet.ParameterSetName -eq 'LiteralPath') {
             foreach ($path in @($LiteralPath | Where-Object { $_ })) {
                 try { $fullPath = Resolve-LiteralPathAsFullPath $path }
-                catch { throw } if (-not $?) { return }
+                catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
             }
         }
         else {
             foreach ($path in @($WildcardPath | Where-Object { $_ })) {
                 try { $fullPath = Resolve-WildcardPathAsFullPath $path }
-                catch { throw } if (-not $?) { return }
+                catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
             }
         }
 
@@ -183,7 +202,11 @@ function Use-WildcardPathFinding {
                 $subItemPaths = Use-WildcardEscaping -Literal $StartIn | Join-Path -Path { $_ } *
                 $subItemPathInfos = @(Resolve-Path -Path $subItemPaths)
             }
-            catch { throw } if (-not $?) { return }
+            catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
 
             $foundLiteralPaths = @($subItemPathInfos | ForEach-Object { $_.Path } |
                 Where-Object { (Split-Path $_ -Leaf) -match $pathHeadRegexPattern })
@@ -202,7 +225,11 @@ function Use-WildcardPathFinding {
         try {
             $foundLiteralPaths | ForEach-Object { Use-WildcardPathFinding -Path $pathTail -StartIn $_ }
         }
-        catch { throw } if (-not $?) { return }
+        catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
     }
 
     end {
@@ -220,7 +247,11 @@ function Resolve-LiteralPathAsAbsolutePath {
 
     process {
         try { $fullLiteralPath = $LiteralPath | Resolve-LiteralPathAsFullPath -Path { $_ } }
-        catch { throw } if (-not $?) { return }
+        catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
         if (-not (Test-Path -LiteralPath $fullLiteralPath)) {
             $resultPaths = $null
             throw "Cannot find path '$Path' because it does not exist."
@@ -244,13 +275,18 @@ function Resolve-WildcardPathAsAbsolutePath {
     process {
         if (($Path -replace '`.') -match '[\?\*\[\]]') {
             try { $foundPaths = @(Resolve-WildcardPathAsFullPath -Path $Path | Use-WildcardPathFinding -Path { $_ }) }
-            catch { throw } if (-not $?) { return }
+            catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
         }
         else {
             $fullLiteralPath = $Path -replace '`(.)', '$1' | Resolve-FullPath -LiteralPath { $_ }
             if (-not (Test-Path -LiteralPath $fullLiteralPath)) {
                 $resultPaths = $null
                 throw "Cannot find path '$Path' because it does not exist."
+                return
             }
             $foundPaths = @($fullLiteralPath)
         }
@@ -285,11 +321,19 @@ function Resolve-AbsolutePath {
         if ($PSCmdlet.ParameterSetName -eq 'LiteralPath') {
             $LiteralPath = @($LiteralPath | Where-Object { $_ })
             try { $absPaths = @($LiteralPath | Resolve-LiteralPathAsAbsolutePath -Path { $_ }) }
-            catch { throw } if (-not $?) { return }
+            catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
         }
         else {
             try { $absPaths = @($WildcardPath | Resolve-WildcardPathAsAbsolutePath -Path { $_ }) }
-            catch { throw } if (-not $?) { return }
+            catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
         }
 
         $resultPaths += @($absPaths)
@@ -364,7 +408,11 @@ function Resolve-RelativePath {
                 $fullLiteralPaths = @($LiteralPath | Resolve-LiteralPathAsFullPath -Path { $_ })
                 $fullLiteralBasePath = Resolve-LiteralPathAsFullPath -Path $BasePath
             }
-            catch { throw } if (-not $?) { return }
+            catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
             $relativePaths = @($fullLiteralPaths | Resolve-FullPathAsRelativePath -FullPath { $_ } -BasePath $fullLiteralBasePath)
         }
         else {
@@ -372,7 +420,11 @@ function Resolve-RelativePath {
                 $fullWildcardPath = @($WildcardPath | Resolve-WildcardPathAsFullPath -Path { $_ })
                 $fullWildcardBasePath = Resolve-LiteralPathAsFullPath -Path $BasePath | Use-WildcardEscaping -Literal { $_ }
             }
-            catch { throw } if (-not $?) { return }
+            catch {
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
+        }
             $relativePaths = @($fullWildcardPath | Resolve-FullPathAsRelativePath -FullPath { $_ } -BasePath $fullWildcardBasePath)
         }
 
