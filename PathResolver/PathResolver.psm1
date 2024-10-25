@@ -194,7 +194,9 @@ function Resolve-LiteralPathAsAbsolutePath {
     [CmdletBinding()]
     [OutputType([string])]
     param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Path)
+    
     begin { [string[]] $resultPaths = @() }
+
     process {
         try { $fullLiteralPath = $LiteralPath | Resolve-LiteralPathAsFullPath -Path { $_ } }
         catch { throw } if (-not $?) { return }
@@ -204,7 +206,11 @@ function Resolve-LiteralPathAsAbsolutePath {
         }
         $resultPaths += @($fullLiteralPath)
     }
-    end { return $resultPaths | Where-Object { $_ } }
+
+    end {
+        $resultPaths = $resultPaths | Where-Object { $_ } | Where-Object { Test-Path -LiteralPath $_ }
+        return $resultPaths
+    }
 }
 
 function Resolve-WildcardPathAsAbsolutePath {
@@ -230,7 +236,10 @@ function Resolve-WildcardPathAsAbsolutePath {
         $resultPaths += @($foundPaths)
     }
 
-    end { return $resultPaths | Where-Object { $_ } }
+    end {
+        $resultPaths = $resultPaths | Where-Object { $_ } | Where-Object { Test-Path -LiteralPath $_ }
+        return $resultPaths
+    }
 }
 
 function Resolve-AbsolutePath {    
@@ -266,8 +275,9 @@ function Resolve-AbsolutePath {
     }
 
     end {
+        $resultPaths = $resultPaths | Where-Object { $_ } | Where-Object { Test-Path -LiteralPath $_ }
         if ($AsEscaped) { $resultPaths = $resultPaths | Use-WildcardEscaping -Literal { $_ } }
-        return $resultPaths | Where-Object { $_ }
+        return $resultPaths
     }
 }
 
