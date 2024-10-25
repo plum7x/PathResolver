@@ -25,20 +25,29 @@ function Resolve-LiteralPathAsFullPath {
         }
     }
 
-    end { return $resultPaths | Where-Object { $_ } }
+    end {
+        $resultPaths = $resultPaths | Where-Object { $_ }
+        return $resultPaths
+    }
 }
 
 function Use-WildcardEscaping {
     [CmdletBinding()]
     [OutputType([string])]
     Param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Literal)
+
     begin { [string[]] $resultPatterns = @() }
+
     process {
         [string] $wildcardPattern = $null
         $wildcardPattern = $Literal -replace '[`\*\?\[\]]', '`$0'
         $resultPatterns += @($wildcardPattern)
     }
-    end { return $resultPatterns }
+
+    end {
+        $resultPatterns = $resultPatterns | Where-Object { $_ }
+        return $resultPatterns
+    }
 }
 
 function Resolve-WildcardPathAsFullPath {
@@ -78,7 +87,10 @@ function Resolve-WildcardPathAsFullPath {
         $resultPaths += @($fullPath)
     }
 
-    end { return $resultPaths | Where-Object { $_ } }
+    end {
+        $resultPaths = $resultPaths | Where-Object { $_ }
+        return $resultPaths
+    }
 }
 
 function Resolve-FullPath {
@@ -112,7 +124,10 @@ function Resolve-FullPath {
         $resultPaths += @($fullPath)
     }
 
-    end { return $resultPaths | Where-Object { $_ } }
+    end {
+        $resultPaths = $resultPaths | Where-Object { $_ }
+        return $resultPaths
+    }
 }
 
 function Use-WildcardToRegexConverter {
@@ -136,7 +151,10 @@ function Use-WildcardToRegexConverter {
         $resultPatterns += @($regexPattern)
     }
 
-    end { return $resultPatterns }
+    end {
+        $resultPatterns = $resultPatterns | Where-Object { $_ } 
+        return $resultPatterns
+    }
 }
 
 function Use-WildcardPathFinding {
@@ -187,14 +205,17 @@ function Use-WildcardPathFinding {
         catch { throw } if (-not $?) { return }
     }
 
-    end { return $resultPaths | Where-Object { $_ } }
+    end {
+        $resultPaths = $resultPaths | Where-Object { $_ }
+        return $resultPaths
+    }
 }
 
 function Resolve-LiteralPathAsAbsolutePath {
     [CmdletBinding()]
     [OutputType([string])]
     param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Path)
-    
+
     begin { [string[]] $resultPaths = @() }
 
     process {
@@ -312,7 +333,10 @@ function Resolve-FullPathAsRelativePath {
         $resultPaths += @($relativePath)
     }
 
-    end { return $resultPaths | Where-Object { $_ } }
+    end {
+        $resultPaths = $resultPaths | Where-Object { $_ }
+        return $resultPaths
+    }
 }
 
 function Resolve-RelativePath {
@@ -355,7 +379,10 @@ function Resolve-RelativePath {
         $resultPaths += @($relativePaths)
     }
 
-    end { return $resultPaths | Where-Object { $_ } }
+    end {
+        $resultPaths = $resultPaths | Where-Object { $_ }
+        return $resultPaths
+    }
 }
 
 Set-Alias -Name 'rvfpa' -Value 'Resolve-FullPath'
