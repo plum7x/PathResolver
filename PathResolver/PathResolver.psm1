@@ -1,4 +1,5 @@
 function Resolve-LiteralPathAsFullPath {
+    [CmdletBinding()]
     [OutputType([string])]
     param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Path)
 
@@ -8,12 +9,10 @@ function Resolve-LiteralPathAsFullPath {
         $rootPathPattrn = if ($isWindows) { '^\S+\:\\' } else { '^/|(?:\S+\:/)' }
         [string[]] $resultPaths = @()
     }
-
+    
     process {
-        try {
-            $fullProviderPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
-        }
-        catch { $resultPaths = $null; throw }
+        try { $fullProviderPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path) }
+        catch { throw } if (-not $?) { return } # If error then go next item, no matter what ErrorAction is.
 
         if ($fullProviderPath -notmatch $rootPathPattrn) {
             $toReplace = '^' + [regex]::Escape($PWD.Drive.Root).TrimEnd('\', '/') + '($|[\\/])'
@@ -26,14 +25,16 @@ function Resolve-LiteralPathAsFullPath {
         }
     }
 
-    end { return $resultPaths }
+    end { return $resultPaths | Where-Object { $_ } }
 }
 
 function Use-WildcardEscaping {
+    [CmdletBinding()]
     [OutputType([string])]
     Param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Literal)
     begin { [string[]] $resultPatterns = @() }
     process {
+        [string] $wildcardPattern = $null
         $wildcardPattern = $Literal -replace '[`\*\?\[\]]', '`$0'
         $resultPatterns += @($wildcardPattern)
     }
@@ -41,6 +42,7 @@ function Use-WildcardEscaping {
 }
 
 function Resolve-WildcardPathAsFullPath {
+    [CmdletBinding()]
     [OutputType([string])]
     param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Path)
 
@@ -68,20 +70,20 @@ function Resolve-WildcardPathAsFullPath {
 
         $literalPathHead = $pathHead -replace '`(.)', '$1'
         try { $fullLiteralPathHead = Resolve-LiteralPathAsFullPath $literalPathHead }
-        catch { $resultPaths = $null; throw }
+        catch { throw } if (-not $?) { return }
         $fullPath = [IO.Path]::Combine($(Use-WildcardEscaping $fullLiteralPathHead), $pathTail)
         try { $fullPath = Resolve-LiteralPathAsFullPath $fullPath }
-        catch { $resultPaths = $null; throw }
+        catch { throw } if (-not $?) { return }
 
         $resultPaths += @($fullPath)
     }
 
-    end { return $resultPaths }
+    end { return $resultPaths | Where-Object { $_ } }
 }
 
 function Resolve-FullPath {
-    [OutputType([string[]])]
     [CmdletBinding(DefaultParameterSetName = 'LiteralPath')]
+    [OutputType([string[]])]    
     param (
         [Parameter(Mandatory, ParameterSetName = 'LiteralPath', Position = 0, ValueFromPipeline)]
         [Alias('Path')]
@@ -97,23 +99,24 @@ function Resolve-FullPath {
         if ($PSCmdlet.ParameterSetName -eq 'LiteralPath') {
             foreach ($path in @($LiteralPath | Where-Object { $_ })) {
                 try { $fullPath = Resolve-LiteralPathAsFullPath $path }
-                catch { $resultPaths = $null; throw }
+                catch { throw } if (-not $?) { return }
             }
         }
         else {
             foreach ($path in @($WildcardPath | Where-Object { $_ })) {
                 try { $fullPath = Resolve-WildcardPathAsFullPath $path }
-                catch { $resultPaths = $null; throw }
+                catch { throw } if (-not $?) { return }
             }
         }
 
         $resultPaths += @($fullPath)
     }
 
-    end { return $resultPaths }
+    end { return $resultPaths | Where-Object { $_ } }
 }
 
 function Use-WildcardToRegexConverter {
+    [CmdletBinding()]
     [OutputType([string])]
     Param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Pattern)
 
@@ -137,6 +140,7 @@ function Use-WildcardToRegexConverter {
 }
 
 function Use-WildcardPathFinding {
+    [CmdletBinding()]
     [OutputType([string[]])]
     param (
         [Parameter(Mandatory, ValueFromPipeline, Position = 0)]
@@ -161,7 +165,7 @@ function Use-WildcardPathFinding {
                 $subItemPaths = Use-WildcardEscaping -Literal $StartIn | Join-Path -Path { $_ } *
                 $subItemPathInfos = @(Resolve-Path -Path $subItemPaths)
             }
-            catch { $resultPaths = $null; throw }
+            catch { throw } if (-not $?) { return }
 
             $foundLiteralPaths = @($subItemPathInfos | ForEach-Object { $_.Path } |
                 Where-Object { (Split-Path $_ -Leaf) -match $pathHeadRegexPattern })
@@ -173,34 +177,65 @@ function Use-WildcardPathFinding {
         }
 
         if ([string]::IsNullOrEmpty($pathTail)) {
-            $resultPaths +=@($foundLiteralPaths)
+            $resultPaths += @($foundLiteralPaths)
             return
         }
 
         try {
             $foundLiteralPaths | ForEach-Object { Use-WildcardPathFinding -Path $pathTail -StartIn $_ }
         }
-        catch { $resultPaths = $null; throw }
+        catch { throw } if (-not $?) { return }
     }
 
-    end { return $resultPaths }
+    end { return $resultPaths | Where-Object { $_ } }
 }
 
-function Resolve-WildcardPathAsAbsolutePath {
+function Resolve-LiteralPathAsAbsolutePath {
+    [CmdletBinding()]
     [OutputType([string])]
     param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Path)
     begin { [string[]] $resultPaths = @() }
     process {
-        try { $absPaths = @(Resolve-WildcardPathAsFullPath -Path $Path | Use-WildcardPathFinding -Path { $_ }) }
-        catch { $resultPaths = $null; throw }
-        $resultPaths += @($absPaths)
+        try { $fullLiteralPath = $LiteralPath | Resolve-LiteralPathAsFullPath -Path { $_ } }
+        catch { throw } if (-not $?) { return }
+        if (-not (Test-Path -LiteralPath $fullLiteralPath)) {
+            $resultPaths = $null
+            throw "Cannot find path '$Path' because it does not exist."
+        }
+        $resultPaths += @($fullLiteralPath)
     }
-    end { return $resultPaths }
+    end { return $resultPaths | Where-Object { $_ } }
 }
 
-function Resolve-AbsolutePath {
-    [OutputType([string[]])]
+function Resolve-WildcardPathAsAbsolutePath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param ([Parameter(Mandatory, ValueFromPipeline, Position = 0)] [string] $Path)
+    
+    begin { [string[]] $resultPaths = @() }
+
+    process {
+        if (($Path -replace '`.') -match '[\?\*\[\]]') {
+            try { $foundPaths = @(Resolve-WildcardPathAsFullPath -Path $Path | Use-WildcardPathFinding -Path { $_ }) }
+            catch { throw } if (-not $?) { return }
+        }
+        else {
+            $fullLiteralPath = $Path -replace '`(.)', '$1' | Resolve-FullPath -LiteralPath { $_ }
+            if (-not (Test-Path -LiteralPath $fullLiteralPath)) {
+                $resultPaths = $null
+                throw "Cannot find path '$Path' because it does not exist."
+            }
+            $foundPaths = @($fullLiteralPath)
+        }
+        $resultPaths += @($foundPaths)
+    }
+
+    end { return $resultPaths | Where-Object { $_ } }
+}
+
+function Resolve-AbsolutePath {    
     [CmdletBinding(DefaultParameterSetName = 'LiteralPath')]
+    [OutputType([string[]])]
     param (
         [Parameter(Mandatory, ParameterSetName = 'LiteralPath', Position = 0, ValueFromPipeline)]
         [Alias('Path')]
@@ -219,14 +254,12 @@ function Resolve-AbsolutePath {
     process {
         if ($PSCmdlet.ParameterSetName -eq 'LiteralPath') {
             $LiteralPath = @($LiteralPath | Where-Object { $_ })
-            try { $absPaths = @($LiteralPath | Resolve-LiteralPathAsFullPath -Path { $_ }) }
-            catch { $resultPaths = $null; throw }
-            try { $absPaths = $absPaths | Resolve-Path -LiteralPath { $_ } | ForEach-Object { $_.Path } }
-            catch { throw }
+            try { $absPaths = @($LiteralPath | Resolve-LiteralPathAsAbsolutePath -Path { $_ }) }
+            catch { throw } if (-not $?) { return }
         }
         else {
             try { $absPaths = @($WildcardPath | Resolve-WildcardPathAsAbsolutePath -Path { $_ }) }
-            catch { $resultPaths = $null; throw }
+            catch { throw } if (-not $?) { return }
         }
 
         $resultPaths += @($absPaths)
@@ -234,11 +267,12 @@ function Resolve-AbsolutePath {
 
     end {
         if ($AsEscaped) { $resultPaths = $resultPaths | Use-WildcardEscaping -Literal { $_ } }
-        return $resultPaths
+        return $resultPaths | Where-Object { $_ }
     }
 }
 
 function Resolve-FullPathAsRelativePath {
+    [CmdletBinding()]
     [OutputType([string])]
     param (
         [Parameter(Mandatory, ValueFromPipeline, Position = 0)]
@@ -268,12 +302,12 @@ function Resolve-FullPathAsRelativePath {
         $resultPaths += @($relativePath)
     }
 
-    end { return $resultPaths }
+    end { return $resultPaths | Where-Object { $_ } }
 }
 
 function Resolve-RelativePath {
-    [OutputType([string[]])]
     [CmdletBinding(DefaultParameterSetName = 'LiteralPath')]
+    [OutputType([string[]])]    
     param (
         [Parameter(Mandatory, ParameterSetName = 'LiteralPath', Position = 0, ValueFromPipeline)]
         [Alias('Path')]
@@ -296,7 +330,7 @@ function Resolve-RelativePath {
                 $fullLiteralPaths = @($LiteralPath | Resolve-LiteralPathAsFullPath -Path { $_ })
                 $fullLiteralBasePath = Resolve-LiteralPathAsFullPath -Path $BasePath
             }
-            catch { $resultPaths = $null; throw }
+            catch { throw } if (-not $?) { return }
             $relativePaths = @($fullLiteralPaths | Resolve-FullPathAsRelativePath -FullPath { $_ } -BasePath $fullLiteralBasePath)
         }
         else {
@@ -304,14 +338,14 @@ function Resolve-RelativePath {
                 $fullWildcardPath = @($WildcardPath | Resolve-WildcardPathAsFullPath -Path { $_ })
                 $fullWildcardBasePath = Resolve-LiteralPathAsFullPath -Path $BasePath | Use-WildcardEscaping -Literal { $_ }
             }
-            catch { $resultPaths = $null; throw }
+            catch { throw } if (-not $?) { return }
             $relativePaths = @($fullWildcardPath | Resolve-FullPathAsRelativePath -FullPath { $_ } -BasePath $fullWildcardBasePath)
         }
 
         $resultPaths += @($relativePaths)
     }
 
-    end { return $resultPaths }
+    end { return $resultPaths | Where-Object { $_ } }
 }
 
 Set-Alias -Name 'rvfpa' -Value 'Resolve-FullPath'
