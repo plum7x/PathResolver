@@ -1,3 +1,5 @@
+using namespace System.Management.Automation
+
 function Resolve-LiteralPathAsFullPath {
     [CmdletBinding()]
     [OutputType([string])]
@@ -13,7 +15,7 @@ function Resolve-LiteralPathAsFullPath {
     process {
         try { $fullProviderPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path) }
         catch {
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
             $PSCmdlet.WriteError($errorRecord)
             return
         }
@@ -83,14 +85,14 @@ function Resolve-WildcardPathAsFullPath {
         $literalPathHead = $pathHead -replace '`(.)', '$1'
         try { $fullLiteralPathHead = Resolve-LiteralPathAsFullPath $literalPathHead }
         catch {
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
             $PSCmdlet.WriteError($errorRecord)
             return
         }
         $fullPath = [IO.Path]::Combine($(Use-WildcardEscaping $fullLiteralPathHead), $pathTail)
         try { $fullPath = Resolve-LiteralPathAsFullPath $fullPath }
         catch {
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
             $PSCmdlet.WriteError($errorRecord)
             return
         }
@@ -120,27 +122,25 @@ function Resolve-FullPath {
 
     process {
         if ($PSCmdlet.ParameterSetName -eq 'LiteralPath') {
-            foreach ($path in @($LiteralPath | Where-Object { $_ })) {
-                try { $fullPath = Resolve-LiteralPathAsFullPath $path }
-                catch {
-                    $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
-                    $PSCmdlet.WriteError($errorRecord)
-                    return
-                }
+            $LiteralPath = $LiteralPath | Where-Object { $_ }
+            try { $fullPaths = $LiteralPath | Resolve-LiteralPathAsFullPath }
+            catch {
+                $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+                $PSCmdlet.WriteError($errorRecord)
+                return
             }
         }
         else {
-            foreach ($path in @($WildcardPath | Where-Object { $_ })) {
-                try { $fullPath = Resolve-WildcardPathAsFullPath $path }
-                catch {
-                    $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
-                    $PSCmdlet.WriteError($errorRecord)
-                    return
-                }
+            $WildcardPath = $WildcardPath | Where-Object { $_ }
+            try { $fullPaths = $WildcardPath | Resolve-WildcardPathAsFullPath }
+            catch {
+                $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+                $PSCmdlet.WriteError($errorRecord)
+                return
             }
         }
 
-        $resultPaths += @($fullPath)
+        $resultPaths += @($fullPaths)
     }
 
     end {
@@ -203,7 +203,7 @@ function Use-WildcardPathFinding {
                 $subItemPathInfos = @(Resolve-Path -Path $subItemPaths)
             }
             catch {
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+                $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
                 $PSCmdlet.WriteError($errorRecord)
                 return
             }
@@ -226,7 +226,7 @@ function Use-WildcardPathFinding {
             $foundLiteralPaths | ForEach-Object { Use-WildcardPathFinding -Path $pathTail -StartIn $_ }
         }
         catch {
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
             $PSCmdlet.WriteError($errorRecord)
             return
         }
@@ -246,15 +246,17 @@ function Resolve-LiteralPathAsAbsolutePath {
     begin { [string[]] $resultPaths = @() }
 
     process {
-        try { $fullLiteralPath = $LiteralPath | Resolve-LiteralPathAsFullPath -Path { $_ } }
+        try { $fullLiteralPath = $Path | Resolve-LiteralPathAsFullPath -Path { $_ } }
         catch {
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+            $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
             $PSCmdlet.WriteError($errorRecord)
             return
         }
         if (-not (Test-Path -LiteralPath $fullLiteralPath)) {
-            $resultPaths = $null
-            throw "Cannot find path '$Path' because it does not exist."
+            $Exception = [Exception]::new("Cannot find path '$Path' because it does not exist.")
+            $errorRecord = [ErrorRecord]::new($Exception, $null, 'NotSpecified', $null)
+            $PSCmdlet.WriteError($errorRecord)
+            return
         }
         $resultPaths += @($fullLiteralPath)
     }
@@ -276,7 +278,7 @@ function Resolve-WildcardPathAsAbsolutePath {
         if (($Path -replace '`.') -match '[\?\*\[\]]') {
             try { $foundPaths = @(Resolve-WildcardPathAsFullPath -Path $Path | Use-WildcardPathFinding -Path { $_ }) }
             catch {
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+                $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
                 $PSCmdlet.WriteError($errorRecord)
                 return
             }
@@ -285,7 +287,7 @@ function Resolve-WildcardPathAsAbsolutePath {
             $fullLiteralPath = $Path -replace '`(.)', '$1' | Resolve-FullPath -LiteralPath { $_ }
             if (-not (Test-Path -LiteralPath $fullLiteralPath)) {
                 $Exception = [Exception]::new("Cannot find path '$Path' because it does not exist.")
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new($Exception, $null, 'NotSpecified', $null)
+                $errorRecord = [ErrorRecord]::new($Exception, $null, 'NotSpecified', $null)
                 $PSCmdlet.WriteError($errorRecord)
                 return
             }
@@ -323,7 +325,7 @@ function Resolve-AbsolutePath {
             $LiteralPath = @($LiteralPath | Where-Object { $_ })
             try { $absPaths = @($LiteralPath | Resolve-LiteralPathAsAbsolutePath -Path { $_ }) }
             catch {
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+                $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
                 $PSCmdlet.WriteError($errorRecord)
                 return
             }
@@ -331,7 +333,7 @@ function Resolve-AbsolutePath {
         else {
             try { $absPaths = @($WildcardPath | Resolve-WildcardPathAsAbsolutePath -Path { $_ }) }
             catch {
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+                $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
                 $PSCmdlet.WriteError($errorRecord)
                 return
             }
@@ -410,7 +412,7 @@ function Resolve-RelativePath {
                 $fullLiteralBasePath = Resolve-LiteralPathAsFullPath -Path $BasePath
             }
             catch {
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+                $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
                 $PSCmdlet.WriteError($errorRecord)
                 return
             }
@@ -422,7 +424,7 @@ function Resolve-RelativePath {
                 $fullWildcardBasePath = Resolve-LiteralPathAsFullPath -Path $BasePath | Use-WildcardEscaping -Literal { $_ }
             }
             catch {
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
+                $errorRecord = [ErrorRecord]::new($_.Exception, $null, 'NotSpecified', $null)
                 $PSCmdlet.WriteError($errorRecord)
                 return
             }
